@@ -1,6 +1,7 @@
 package com.pulumi.automation;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Lists;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.pulumi.Context;
@@ -18,6 +19,7 @@ import java.util.function.Consumer;
 
 import static com.pulumi.automation.ValueOrSecret.secret;
 import static com.pulumi.automation.ValueOrSecret.value;
+import static org.assertj.core.api.Assertions.assertThat;
 
 public class LocalWorkspaceTests {
 
@@ -59,6 +61,7 @@ public class LocalWorkspaceTests {
         }
 
         Consumer<Context> program = ctx -> {
+            ctx.export("exp-list", Output.ofList("a", "b", "c").asSecret());
             ctx.export("exp-static", Output.of("foo"));
             ctx.export("exp-cfg", Output.of(ctx.config().require("bar")));
             ctx.export("exp-secret", Output.of(ctx.config().requireSecret("buzz")));
@@ -81,16 +84,20 @@ public class LocalWorkspaceTests {
 
         var stack = workspace.upsertStack(StackSettings.builder()
                 .name(stackName)
-                .config(ImmutableMap.of( // FIXME
-                        "bar", value("abc"),
-                        "buzz", secret("secret")
-                ))
+//                .config(ImmutableMap.of( // FIXME
+//                        "bar", value("abc"),
+//                        "buzz", secret("secret")
+//                ))
                 .build()
         );
-//        var result = stack.previewAsync();
         var result = stack.upAsync(UpOptions.builder().build());
 
         result.join();
+
+        var output = stack.output().join();
+
+        assertThat(output.get("exp-list")).isEqualTo(Lists.newArrayList("a", "b", "c"));
+        assertThat(output.get("exp-static")).isEqualTo("foo");
     }
 
     private String safe(String displayName) {

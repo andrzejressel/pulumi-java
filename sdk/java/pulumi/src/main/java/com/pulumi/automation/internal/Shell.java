@@ -1,6 +1,7 @@
 package com.pulumi.automation.internal;
 
 import com.google.common.collect.ImmutableMap;
+import com.pulumi.automation.CmdResult;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -40,7 +41,7 @@ public class Shell {
         this.workDir = requireNonNull(workDir);
     }
 
-    public CompletableFuture<Integer> run(String... command) {
+    public CompletableFuture<CmdResult> run(String... command) {
         return CompletableFuture.supplyAsync(() -> {
             ProcessBuilder builder = new ProcessBuilder();
             builder.directory(workDir.toFile());
@@ -53,21 +54,28 @@ public class Shell {
             }
         }).thenCompose(process -> {
             var codeAsync = process.onExit();
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
             var done = CompletableFuture.allOf(
                     codeAsync,
-                    redirect(process.getErrorStream(), this.stderr),
-                    redirect(process.getInputStream(), this.stdout),
+                    redirect(process.getErrorStream(), this.stderr, line -> appendNewLine(stderr, line)),
+                    redirect(process.getInputStream(), this.stdout, line -> appendNewLine(stdout, line)),
                     redirect(this.stdin, process.getOutputStream())
             );
-            return done.thenApply(ignore -> codeAsync.join().exitValue());
+            return done.thenApply(ignore ->
+                    new CmdResult(codeAsync.join().exitValue(), stdout.toString(), stderr.toString())
+            );
         });
     }
 
-    private CompletableFuture<Void> redirect(final InputStream stream, final Consumer<String> lines) {
+    private CompletableFuture<Void> redirect(final InputStream stream, final Consumer<String> lines, final Consumer<String> lines2) {
         final CompletableFuture<Void> future = new CompletableFuture<>();
         CompletableFuture.runAsync(() -> {
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(stream))) {
-                reader.lines().forEachOrdered(lines);
+                reader.lines().forEachOrdered(line -> {
+                    lines.accept(line);
+                    lines2.accept(line);
+                });
                 future.complete(null);
             } catch (IOException e) {
                 future.completeExceptionally(e);
@@ -102,5 +110,10 @@ public class Shell {
                         throw new UncheckedIOException(e);
                     }
                 });
+    }
+
+    private void appendNewLine(StringBuilder stringBuilder, String line) {
+        stringBuilder.append(line);
+        stringBuilder.append("\n");
     }
 }

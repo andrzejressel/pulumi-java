@@ -1,5 +1,7 @@
 package com.pulumi.automation;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.pulumi.automation.internal.ExecKind;
 import com.pulumi.automation.internal.LanguageRuntimeContext;
 import com.pulumi.automation.internal.LanguageRuntimeServer;
@@ -7,6 +9,7 @@ import com.pulumi.automation.internal.LanguageRuntimeService;
 import com.pulumi.automation.internal.Shell;
 import com.pulumi.core.internal.Arrays;
 
+import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -73,6 +76,21 @@ public class WorkspaceStack {
         ));
     }
 
+    public CompletableFuture<Map<String, Object>> output() {
+        var args = new String[]{
+                "stack",
+                "output",
+                "--json",
+                "--show-secrets",
+                String.format("--stack=%s", this.settings.name()),
+        };
+
+        return pulumiCmd(ExecKind.None, args).thenApply(cmdResult -> {
+            Type empMapType = new TypeToken<Map<String, Object>>() {}.getType();
+            return new Gson().fromJson(cmdResult.getStandardOutput(), empMapType);
+        });
+    }
+
     public CompletableFuture<Void> previewAsync() {
         var args = new String[]{
                 "preview",
@@ -82,11 +100,11 @@ public class WorkspaceStack {
         return pulumiCmd(execKind(), args).thenApply(__ -> null);
     }
 
-    private CompletableFuture<Integer> pulumiCmd(ExecKind kind, String... args) {
+    private CompletableFuture<CmdResult> pulumiCmd(ExecKind kind, String... args) {
         var shell = new Shell(
                 () -> null,
-                line -> System.out.println(line),
-                line -> System.err.println(line),
+                logger::info,
+                logger::severe,
                 this.workspace.environmentVariables(),
                 this.workspace.workDir()
         );
@@ -103,7 +121,7 @@ public class WorkspaceStack {
             args = Arrays.concat(args, new String[]{
                     String.format("--client=127.0.0.1:%d", server.port()),
             });
-            return shell.run(args).whenComplete((integer, throwable) -> {
+            return shell.run(args).whenComplete((result, throwable) -> {
                 server.shutdown();
             });
         }
@@ -127,14 +145,14 @@ public class WorkspaceStack {
     }
 
     private static void defaultInitializer(WorkspaceStack stack) {
-        if (stack.select() > 0) {
-            if (stack.create() > 0) {
+        if (stack.select().getCode() > 0) {
+            if (stack.create().getCode() > 0) {
                 throw new IllegalStateException("stack creation failed");
             };
         }
     }
 
-    private Integer select() {
+    private CmdResult select() {
         var args = new String[]{
                 "stack",
                 "init",
@@ -143,7 +161,7 @@ public class WorkspaceStack {
         return pulumiCmd(ExecKind.None, args).join();
     }
 
-    private Integer create() {
+    private CmdResult create() {
         var args = new String[]{
                 "stack",
                 "select",
