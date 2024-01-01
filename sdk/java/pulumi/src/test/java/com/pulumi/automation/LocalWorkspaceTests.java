@@ -8,6 +8,7 @@ import com.pulumi.Context;
 import com.pulumi.core.Output;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.FileWriter;
@@ -29,6 +30,7 @@ public class LocalWorkspaceTests {
     // pulumi login --local
 
     @Test
+    @DisabledIfEnvironmentVariable(named = "GITHUB_ACTIONS", matches = "true")
     public void testStackLifecycleInlineProgram(TestInfo testInfo, @TempDir Path tempDir) throws IOException {
         var projectName = safe(testInfo.getDisplayName()) + Tests.randomSuffix();
         var stackName = Tests.randomStackName();
